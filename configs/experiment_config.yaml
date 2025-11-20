@@ -1,0 +1,83 @@
+# Experiment Configuration for Traffic Sign Detection
+
+# Dataset Configuration
+dataset:
+  roboflow:
+    api_key: "gbb6oBUEJlstBEF0CruH"
+    workspace: "GiaoThong"
+    project: "phat_hien_bien_bao-zsswb"
+    version: 1
+  formats:
+    - yolov8
+    - coco
+  img_size: 640
+
+# Traditional Methods Configuration
+traditional:
+  hog_svm:
+    img_size: [64, 64]
+    orientations: 9
+    pixels_per_cell: [8, 8]
+    cells_per_block: [2, 2]
+    block_norm: "L2-Hys"
+    svm_kernel: "rbf"
+    svm_c: 10.0
+
+  color_shape:
+    min_area: 500
+    confidence_threshold: 0.6
+    colors:
+      - red
+      - blue
+      - yellow
+
+# Modern Methods Configuration
+modern:
+  yolo:
+    model_sizes: ['n', 's', 'm']  # nano, small, medium
+    img_size: 640
+    epochs: 100
+    batch_size: 16
+    patience: 20
+    learning_rate: 0.01
+    optimizer: "auto"
+    augment: true
+    cos_lr: true
+
+  faster_rcnn:
+    backbone: "resnet50"
+    pretrained: true
+    epochs: 50
+    batch_size: 4
+    learning_rate: 0.005
+    momentum: 0.9
+    weight_decay: 0.0005
+
+# Evaluation Configuration
+evaluation:
+  metrics:
+    - mAP@0.5
+    - mAP@0.5:0.95
+    - precision
+    - recall
+    - f1_score
+  iou_thresholds:
+    - 0.5
+    - 0.75
+  confidence_threshold: 0.25
+
+# Visualization Configuration
+visualization:
+  save_predictions: true
+  max_samples: 20
+  plot_formats:
+    - png
+    - pdf
+  dpi: 300
+
+# Output Configuration
+output:
+  experiments_dir: "experiments"
+  models_dir: "models"
+  plots_dir: "plots"
+  logs_dir: "logs"
