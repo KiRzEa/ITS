@@ -25,7 +25,8 @@ class TrafficSignDataset(Dataset):
         self,
         images_dir: str,
         annotations_file: str,
-        transforms=None
+        transforms=None,
+        filter_empty: bool = True
     ):
         """
         Initialize dataset
@@ -34,15 +35,16 @@ class TrafficSignDataset(Dataset):
             images_dir: Directory containing images
             annotations_file: Path to COCO format annotations JSON
             transforms: Image transforms
+            filter_empty: If True, filter out images with no annotations
         """
         self.images_dir = Path(images_dir)
         self.transforms = transforms
+        self.filter_empty = filter_empty
 
         # Load annotations
         with open(annotations_file, 'r') as f:
             self.coco_data = json.load(f)
 
-        self.images = self.coco_data['images']
         self.annotations = self.coco_data['annotations']
         self.categories = self.coco_data['categories']
 
@@ -53,6 +55,16 @@ class TrafficSignDataset(Dataset):
             if img_id not in self.img_to_anns:
                 self.img_to_anns[img_id] = []
             self.img_to_anns[img_id].append(ann)
+
+        # Filter out images with no annotations if requested
+        if self.filter_empty:
+            self.images = [
+                img for img in self.coco_data['images']
+                if img['id'] in self.img_to_anns and len(self.img_to_anns[img['id']]) > 0
+            ]
+            print(f"Filtered dataset: {len(self.images)}/{len(self.coco_data['images'])} images with annotations")
+        else:
+            self.images = self.coco_data['images']
 
     def __len__(self):
         return len(self.images)
@@ -78,11 +90,26 @@ class TrafficSignDataset(Dataset):
         for ann in anns:
             # COCO format: [x, y, width, height]
             x, y, w, h = ann['bbox']
+
+            # Skip invalid boxes
+            if w <= 0 or h <= 0:
+                continue
+
             # Convert to [x1, y1, x2, y2]
             boxes.append([x, y, x + w, y + h])
             labels.append(ann['category_id'])
             areas.append(ann.get('area', w * h))
             iscrowd.append(ann.get('iscrowd', 0))
+
+        # Handle case where no valid boxes exist
+        # This should be rare if filter_empty=True, but provides extra safety
+        if len(boxes) == 0:
+            # Return a dummy box to avoid assertion errors
+            # This will be filtered out during training
+            boxes = [[0, 0, 1, 1]]
+            labels = [0]
+            areas = [1.0]
+            iscrowd = [1]  # Mark as crowd to potentially skip
 
         # Convert to tensors
         boxes = torch.as_tensor(boxes, dtype=torch.float32)

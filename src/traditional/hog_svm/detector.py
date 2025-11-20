@@ -354,25 +354,60 @@ class SlidingWindowDetector:
     def _non_max_suppression(
         self,
         detections: List[Dict],
-        iou_threshold: float = 0.3
+        iou_threshold: float = 0.5,
+        class_agnostic: bool = False
     ) -> Tuple[List[Tuple[int, int, int, int]], List[int], List[float]]:
-        """Apply non-maximum suppression to detections"""
+        """
+        Apply non-maximum suppression to detections
+
+        Args:
+            detections: List of detection dictionaries
+            iou_threshold: IoU threshold for suppression (higher = more aggressive merging)
+            class_agnostic: If False, NMS is applied per-class (recommended)
+        """
         if not detections:
             return [], [], []
 
-        # Sort by confidence
-        detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
+        if class_agnostic:
+            # Original NMS - suppress across all classes
+            detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
 
-        keep = []
-        while detections:
-            best = detections.pop(0)
-            keep.append(best)
+            keep = []
+            while detections:
+                best = detections.pop(0)
+                keep.append(best)
 
-            # Remove overlapping detections
-            detections = [
-                det for det in detections
-                if self._calculate_iou(best['box'], det['box']) < iou_threshold
-            ]
+                # Remove overlapping detections
+                detections = [
+                    det for det in detections
+                    if self._calculate_iou(best['box'], det['box']) < iou_threshold
+                ]
+        else:
+            # Class-aware NMS - apply NMS per class
+            keep = []
+
+            # Group detections by class
+            class_detections = {}
+            for det in detections:
+                cls = det['class']
+                if cls not in class_detections:
+                    class_detections[cls] = []
+                class_detections[cls].append(det)
+
+            # Apply NMS per class
+            for cls, cls_dets in class_detections.items():
+                # Sort by confidence
+                cls_dets = sorted(cls_dets, key=lambda x: x['confidence'], reverse=True)
+
+                while cls_dets:
+                    best = cls_dets.pop(0)
+                    keep.append(best)
+
+                    # Remove overlapping detections of same class
+                    cls_dets = [
+                        det for det in cls_dets
+                        if self._calculate_iou(best['box'], det['box']) < iou_threshold
+                    ]
 
         boxes = [d['box'] for d in keep]
         classes = [d['class'] for d in keep]
