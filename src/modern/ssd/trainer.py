@@ -220,8 +220,15 @@ class SSDTrainer:
         # Get number of anchors from the model
         num_anchors = self.model.anchor_generator.num_anchors_per_location()
 
-        # Get input channels for each feature map
-        in_channels = [feature.out_channels for feature in self.model.backbone.out_channels]
+        # Get input channels for each feature map from the backbone's feature extractor
+        if hasattr(self.model.backbone, 'out_channels'):
+            in_channels = self.model.backbone.out_channels
+        elif hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'features'):
+            # For feature extractors, get out_channels from the feature layers
+            in_channels = self.model.head.classification_head.module_list[0].in_channels
+        else:
+            # Fallback: inspect the existing head
+            raise AttributeError("Cannot determine in_channels for SSD head replacement")
 
         # Create new classification head
         self.model.head.classification_head = SSDClassificationHead(

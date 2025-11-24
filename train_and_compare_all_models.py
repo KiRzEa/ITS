@@ -77,9 +77,9 @@ class ModelBenchmark:
         print(f"{'='*80}\n")
 
         backbones = [
-            ('resnet50', 4, 0.001),      # (backbone, batch_size, lr)
-            ('resnet34', 6, 0.001),
-            ('mobilenet_v3', 8, 0.001)
+            ('resnet50', 8, 0.001),      # (backbone, batch_size, lr)
+            ('resnet34', 12, 0.001),
+            ('mobilenet_v3', 16, 0.001)
         ]
 
         for backbone, batch_size, lr in backbones:
@@ -102,9 +102,9 @@ class ModelBenchmark:
                     filter_empty=True
                 )
 
-                # Initialize trainer
+                # Initialize trainer (num_classes + 1 for background)
                 trainer = RetinaNetTrainer(
-                    num_classes=self.num_classes,
+                    num_classes=self.num_classes + 1,
                     backbone=backbone,
                     pretrained=True,
                     device='auto'
@@ -168,7 +168,7 @@ class ModelBenchmark:
         print(f"{'='*80}\n")
 
         backbones = [
-            ('vgg16', 8, 0.001),
+            ('vgg16', 12, 0.001),
             ('mobilenet_v3', 16, 0.001)
         ]
 
@@ -192,9 +192,9 @@ class ModelBenchmark:
                     filter_empty=True
                 )
 
-                # Initialize trainer
+                # Initialize trainer (num_classes + 1 for background)
                 trainer = SSDTrainer(
-                    num_classes=self.num_classes,
+                    num_classes=self.num_classes + 1,
                     backbone=backbone,
                     pretrained=True,
                     device='auto'
@@ -258,9 +258,9 @@ class ModelBenchmark:
         print(f"{'='*80}\n")
 
         backbones = [
-            ('resnet50', 4, 0.005),
-            ('resnet34', 6, 0.005),
-            ('mobilenet_v3_large', 8, 0.005)
+            ('resnet50', 8, 0.005),
+            ('resnet34', 12, 0.005),
+            ('mobilenet_v3_large', 16, 0.005)
         ]
 
         for backbone, batch_size, lr in backbones:
@@ -283,9 +283,9 @@ class ModelBenchmark:
                     filter_empty=True
                 )
 
-                # Initialize trainer
+                # Initialize trainer (num_classes + 1 for background)
                 trainer = FasterRCNNTrainer(
-                    num_classes=self.num_classes,
+                    num_classes=self.num_classes + 1,
                     backbone=backbone,
                     pretrained=True,
                     device='auto'

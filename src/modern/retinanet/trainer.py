@@ -249,9 +249,20 @@ class RetinaNetTrainer:
         # Get number of anchors
         num_anchors = self.model.head.classification_head.num_anchors
 
+        # Get in_channels from the first layer of conv
+        # Handle both sequential and Conv2dNormActivation cases
+        first_conv = self.model.head.classification_head.conv
+        if hasattr(first_conv, '__getitem__'):
+            in_channels = first_conv[0].in_channels
+        elif hasattr(first_conv, '0'):
+            in_channels = getattr(first_conv, '0').in_channels
+        else:
+            # For Conv2dNormActivation, access the first conv layer
+            in_channels = list(first_conv.children())[0].in_channels
+
         # Create new classification head
         self.model.head.classification_head = RetinaNetClassificationHead(
-            in_channels=self.model.head.classification_head.conv[0].in_channels,
+            in_channels=in_channels,
             num_anchors=num_anchors,
             num_classes=num_classes
         )
