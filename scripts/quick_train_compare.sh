@@ -97,6 +97,8 @@ echo ""
 echo "Step 3/4: Training and comparing all models..."
 echo "This will take several hours depending on your GPU."
 echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
+cd ..
+pwd
 sleep 5
 
 python scripts/train_and_compare_all_models.py \
