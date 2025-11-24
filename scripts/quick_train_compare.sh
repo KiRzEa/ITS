@@ -24,18 +24,56 @@ echo "  COCO annotations: $COCO_DIR"
 echo "  Experiments dir: $EXPERIMENTS_DIR"
 echo ""
 
-# Step 1: Check if data exists
-echo "Step 1/3: Checking data..."
+# Step 1: Download dataset from Roboflow (if not exists)
+echo "Step 1/4: Checking/downloading dataset..."
 if [ ! -d "$DATA_ROOT/train/images" ]; then
-    echo "Error: Training data not found at $DATA_ROOT/train/images"
-    echo "Please ensure your data is in the correct location."
-    exit 1
+    echo "Dataset not found. Downloading from Roboflow..."
+    echo "Note: This requires ROBOFLOW_API_KEY in .env file"
+
+    # Check if .env file exists
+    if [ ! -f ".env" ]; then
+        echo "Error: .env file not found"
+        echo "Please create .env file with your ROBOFLOW_API_KEY"
+        echo "See .env.example for reference"
+        exit 1
+    fi
+
+    # Download dataset using Python script
+    python -c "
+from src.utils.roboflow_loader import RoboflowDataLoader
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+api_key = os.getenv('ROBOFLOW_API_KEY')
+
+if not api_key:
+    print('Error: ROBOFLOW_API_KEY not found in .env file')
+    exit(1)
+
+loader = RoboflowDataLoader(
+    api_key=api_key,
+    workspace='giaothong-t5tdy',
+    project='phat_hien_bien_bao-zsswb',
+    version=1
+)
+
+# Download in YOLOv8 format
+yolo_path = loader.download_dataset(format='yolov8')
+print(f'Dataset downloaded to: {yolo_path}')
+"
+
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to download dataset"
+        exit 1
+    fi
+else
+    echo "✓ Dataset already exists"
 fi
-echo "✓ Data found"
 echo ""
 
 # Step 2: Prepare COCO format annotations
-echo "Step 2/3: Preparing COCO format annotations..."
+echo "Step 2/4: Preparing COCO format annotations..."
 if [ ! -f "$COCO_DIR/train_coco.json" ]; then
     echo "Converting YOLO format to COCO format..."
     python scripts/prepare_coco_format.py \
@@ -47,7 +85,7 @@ fi
 echo ""
 
 # Step 3: Train and compare all models
-echo "Step 3/3: Training and comparing all models..."
+echo "Step 3/4: Training and comparing all models..."
 echo "This will take several hours depending on your GPU."
 echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
 sleep 5
