@@ -324,7 +324,7 @@ def validate_model(
         model: Detection model (RetinaNet, SSD, Faster R-CNN, etc.)
         dataloader: Validation dataloader
         device: Device to use
-        num_classes: Number of classes
+        num_classes: Number of classes (including background class 0)
         conf_threshold: Confidence threshold
         verbose: Print progress
 
@@ -332,7 +332,14 @@ def validate_model(
         Dictionary with validation metrics
     """
     model.eval()
-    validator = DetectionValidator(num_classes=num_classes, conf_threshold=conf_threshold)
+
+    # For PyTorch detection models, predictions include background class (class 0)
+    # but ground truth doesn't. We need to:
+    # 1. Filter out class 0 predictions
+    # 2. Remap class labels to exclude background (1->0, 2->1, etc.)
+    # 3. Use num_classes-1 for validator (excluding background)
+
+    validator = DetectionValidator(num_classes=num_classes - 1, conf_threshold=conf_threshold)
 
     iterator = tqdm(dataloader, desc="Validating") if verbose else dataloader
 
@@ -351,12 +358,25 @@ def validate_model(
             gt_labels = []
 
             for pred, target in zip(predictions, targets):
-                # Predictions
-                pred_boxes.append(pred['boxes'].cpu().numpy())
-                pred_labels.append(pred['labels'].cpu().numpy())
-                pred_scores.append(pred['scores'].cpu().numpy())
+                # Predictions - filter out background class (class 0) and remap
+                boxes_np = pred['boxes'].cpu().numpy()
+                labels_np = pred['labels'].cpu().numpy()
+                scores_np = pred['scores'].cpu().numpy()
 
-                # Ground truth
+                # Filter out background class (class 0)
+                non_bg_mask = labels_np > 0
+                boxes_np = boxes_np[non_bg_mask]
+                labels_np = labels_np[non_bg_mask]
+                scores_np = scores_np[non_bg_mask]
+
+                # Remap labels: 1->0, 2->1, 3->2, etc. (subtract 1)
+                labels_np = labels_np - 1
+
+                pred_boxes.append(boxes_np)
+                pred_labels.append(labels_np)
+                pred_scores.append(scores_np)
+
+                # Ground truth - already 0-indexed (no background class)
                 gt_boxes.append(target['boxes'].cpu().numpy())
                 gt_labels.append(target['labels'].cpu().numpy())
 
@@ -378,8 +398,8 @@ def validate_model(
         print(f"F1 Score:    {metrics['f1_score']:.4f}")
         print(f"{'='*60}")
 
-        print("\nPer-class AP@0.5:")
-        for class_id in range(num_classes):
+        print("\nPer-class AP@0.5 (excluding background):")
+        for class_id in range(num_classes - 1):
             ap = metrics['per_class'][f'class_{class_id}']['ap']
             print(f"  Class {class_id}: {ap:.4f}")
         print(f"{'='*60}\n")
