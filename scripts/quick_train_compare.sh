@@ -38,30 +38,39 @@ if [ ! -d "$DATA_ROOT/train/images" ]; then
         exit 1
     fi
 
-    # Download dataset using Python script
-    python -c "
-from src.utils.roboflow_loader import RoboflowDataLoader
+    # Download dataset using Python script (avoid importing project modules)
+    python << 'ENDPYTHON'
 import os
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
-load_dotenv()
+# Load environment variables manually
+env_file = Path('.env')
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                os.environ[key.strip()] = value.strip()
+
 api_key = os.getenv('ROBOFLOW_API_KEY')
-
 if not api_key:
     print('Error: ROBOFLOW_API_KEY not found in .env file')
-    exit(1)
+    sys.exit(1)
 
-loader = RoboflowDataLoader(
-    api_key=api_key,
-    workspace='giaothong-t5tdy',
-    project='phat_hien_bien_bao-zsswb',
-    version=1
-)
+# Import only Roboflow - no project imports
+from roboflow import Roboflow
 
-# Download in YOLOv8 format
-yolo_path = loader.download_dataset(format='yolov8')
-print(f'Dataset downloaded to: {yolo_path}')
-"
+# Download using Roboflow API directly
+print('Connecting to Roboflow...')
+rf = Roboflow(api_key=api_key)
+project = rf.workspace('giaothong-t5tdy').project('phat_hien_bien_bao-zsswb')
+print('Downloading dataset...')
+dataset = project.version(1).download('yolov8', location='data/raw')
+
+print(f'✓ Dataset downloaded to: data/raw/yolov8')
+ENDPYTHON
 
     if [ $? -ne 0 ]; then
         echo "Error: Failed to download dataset"
