@@ -38,135 +38,66 @@ if [ ! -d "$DATA_ROOT/train/images" ]; then
         exit 1
     fi
 
-    # Download dataset using Python script (avoid importing project modules)
+    # Download dataset using RoboflowDataLoader
     python << 'ENDPYTHON'
 import os
 import sys
 from pathlib import Path
 
+# Add project root to path
+sys.path.insert(0, str(Path.cwd()))
+
 # Ensure we're in the correct directory
 print(f'Current working directory: {os.getcwd()}')
 
-# Create data/raw directory if it doesn't exist
-data_raw = Path('data/raw')
-data_raw.mkdir(parents=True, exist_ok=True)
-print(f'Created/verified directory: {data_raw.absolute()}')
-
-# Load environment variables manually
-env_file = Path('.env')
-if env_file.exists():
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                os.environ[key.strip()] = value.strip()
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv('.env')
 
 api_key = os.getenv('ROBOFLOW_API_KEY')
 if not api_key:
     print('Error: ROBOFLOW_API_KEY not found in .env file')
     sys.exit(1)
 
-# Import only Roboflow - no project imports
-from roboflow import Roboflow
+# Use RoboflowDataLoader from project
+from src.utils.roboflow_loader import RoboflowDataLoader
 
-# Download using Roboflow API directly
 print('Connecting to Roboflow...')
-rf = Roboflow(api_key=api_key)
-project = rf.workspace('giaothong-t5tdy').project('phat_hien_bien_bao-zsswb')
-print('Downloading dataset...')
+loader = RoboflowDataLoader(
+    api_key=api_key,
+    workspace='giaothong-t5tdy',
+    project='phat_hien_bien_bao-zsswb',
+    version=1,
+    data_dir='data/raw'
+)
 
-# Roboflow downloads to: location/project-name-version
-# So if location='data/raw', it creates: data/raw/phat_hien_bien_bao-zsswb-1/
-dataset = project.version(1).download('yolov8', location='data/raw')
-
-# Get actual download location
-download_location = dataset.location
-print(f'Dataset downloaded to: {download_location}')
-
-# Inspect what's actually in the download location
-downloaded_dir = Path(download_location).absolute()
-print(f'Inspecting download directory: {downloaded_dir}')
-print(f'  Exists: {downloaded_dir.exists()}')
-if downloaded_dir.exists():
-    contents = list(downloaded_dir.iterdir())
-    print(f'  Contents ({len(contents)} items):')
-    for item in sorted(contents)[:20]:
-        item_type = 'DIR' if item.is_dir() else 'FILE'
-        print(f'    [{item_type}] {item.name}')
-    if len(contents) > 20:
-        print(f'    ... and {len(contents) - 20} more items')
-
-# Handle Roboflow's flexible download structure
-target_dir = Path('data/raw/yolov8').absolute()
-
-# Look for the actual dataset directory (might have project name)
-data_raw = Path('data/raw').absolute()
-yolov8_dirs = []
-if data_raw.exists():
-    for item in data_raw.iterdir():
-        if item.is_dir() and (item / 'train' / 'images').exists():
-            yolov8_dirs.append(item)
-            print(f'Found valid dataset structure in: {item}')
-
-if yolov8_dirs:
-    # Found a directory with correct structure
-    source_dir = yolov8_dirs[0]  # Use the first one found
-    if source_dir != target_dir:
-        print(f'Moving dataset from {source_dir} to {target_dir}')
-        if target_dir.exists():
-            import shutil
-            shutil.rmtree(target_dir)
-        import shutil
-        shutil.move(str(source_dir), str(target_dir))
-        print(f'✓ Dataset moved to: {target_dir}')
-    else:
-        print(f'✓ Dataset is already at: {target_dir}')
-elif downloaded_dir == data_raw:
-    # Downloaded directly into data/raw but structure might be different
-    # Check if subdirectories exist directly
-    if (downloaded_dir / 'train' / 'images').exists():
-        print(f'Dataset structure found directly in {downloaded_dir}')
-        print(f'Reorganizing to {target_dir}...')
-
-        # Create temporary directory
-        import tempfile
-        temp_dir = Path(tempfile.mkdtemp(prefix='roboflow_'))
-
-        # Move contents to temp
-        import shutil
-        for item in downloaded_dir.iterdir():
-            if item.name != 'yolov8':
-                shutil.move(str(item), str(temp_dir / item.name))
-
-        # Create target and move from temp
-        target_dir.mkdir(parents=True, exist_ok=True)
-        for item in temp_dir.iterdir():
-            shutil.move(str(item), str(target_dir / item.name))
-
-        temp_dir.rmdir()
-        print(f'✓ Dataset reorganized to: {target_dir}')
-    else:
-        print(f'❌ ERROR: Could not find train/images directory')
-        print(f'   Please check the download and directory structure')
-        sys.exit(1)
-else:
-    print(f'❌ ERROR: Unexpected download structure')
-    print(f'   Downloaded to: {downloaded_dir}')
-    print(f'   Expected: subdirectory in data/raw or direct download to data/raw')
-    sys.exit(1)
+print('Downloading dataset in YOLOv8 format...')
+yolo_path = loader.download_dataset(format='yolov8')
+print(f'✓ Dataset downloaded to: {yolo_path}')
 
 # Verify the download
+target_dir = Path('data/raw/yolov8')
 train_images = target_dir / 'train' / 'images'
+
 if train_images.exists():
     num_images = len(list(train_images.glob('*.*')))
     print(f'✓ Verified: Found {num_images} training images')
+
+    # Print dataset info
+    info = loader.get_dataset_info()
+    print(f'✓ Number of classes: {info.get("num_classes", "unknown")}')
+    print(f'✓ Class names: {info.get("class_names", [])}')
 else:
     print(f'⚠️  Warning: Training images not found at {train_images}')
-    print(f'   Directory contents:')
-    if target_dir.exists():
-        for item in target_dir.iterdir():
-            print(f'     - {item.name}')
+    print(f'   Actual download location: {yolo_path}')
+
+    # Try to find where it was actually downloaded
+    data_raw = Path('data/raw')
+    print(f'\\n   Searching for dataset in data/raw...')
+    for item in data_raw.rglob('train/images'):
+        if item.is_dir():
+            num_images = len(list(item.glob('*.*')))
+            print(f'   Found {num_images} images in: {item.parent.parent}')
 
 ENDPYTHON
 
