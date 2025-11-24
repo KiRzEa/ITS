@@ -85,18 +85,25 @@ download_location = dataset.location
 print(f'Dataset downloaded to: {download_location}')
 
 # Check if we need to move/rename the directory
-downloaded_dir = Path(download_location)
-target_dir = Path('data/raw/yolov8')
+downloaded_dir = Path(download_location).absolute()
+target_dir = Path('data/raw/yolov8').absolute()
 
-if downloaded_dir != target_dir and downloaded_dir.exists():
-    print(f'Moving from {downloaded_dir} to {target_dir}')
-    if target_dir.exists():
+if downloaded_dir != target_dir:
+    if downloaded_dir.exists():
+        print(f'Moving from {downloaded_dir} to {target_dir}')
+        if target_dir.exists():
+            import shutil
+            shutil.rmtree(target_dir)
+        # Ensure parent directory exists
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        # Use shutil.move for cross-filesystem compatibility
         import shutil
-        shutil.rmtree(target_dir)
-    downloaded_dir.rename(target_dir)
-    print(f'✓ Dataset moved to: {target_dir}')
+        shutil.move(str(downloaded_dir), str(target_dir))
+        print(f'✓ Dataset moved to: {target_dir}')
+    else:
+        print(f'⚠️  Download location does not exist: {downloaded_dir}')
 else:
-    print(f'✓ Dataset is at: {target_dir}')
+    print(f'✓ Dataset is already at correct location: {target_dir}')
 
 # Verify the download
 train_images = target_dir / 'train' / 'images'
