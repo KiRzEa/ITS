@@ -22,11 +22,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
+from torch.utils.data import DataLoader
 
 from src.modern.retinanet.trainer import RetinaNetTrainer, TrafficSignDataset as RetinaNetDataset
 from src.modern.ssd.trainer import SSDTrainer, TrafficSignDataset as SSDDataset
 from src.modern.faster_rcnn.trainer import FasterRCNNTrainer, TrafficSignDataset as FasterRCNNDataset
 from src.modern.yolo.trainer import YOLOTrainer
+from src.utils.detection_validator import validate_model
 
 
 class ModelBenchmark:
@@ -717,6 +719,204 @@ class ModelBenchmark:
 
         print(f"✓ Report saved to: {report_file}")
 
+    def evaluate_on_test_set(self):
+        """Evaluate all trained models on test set for final performance"""
+        print(f"\n{'='*80}")
+        print("EVALUATING ON TEST SET (FINAL PERFORMANCE)")
+        print(f"{'='*80}\n")
+
+        test_results = {}
+
+        # Check if test set exists
+        test_images_path = self.data_root / 'test' / 'images'
+        test_annotations_path = self.coco_annotations / 'test_coco.json'
+
+        if not test_images_path.exists() or not test_annotations_path.exists():
+            print("⚠️  Test set not found. Skipping test evaluation.")
+            print(f"   Expected: {test_images_path}")
+            print(f"   Expected: {test_annotations_path}")
+            return
+
+        print(f"✓ Test set found: {test_images_path}")
+        print(f"✓ Test annotations: {test_annotations_path}\n")
+
+        # Evaluate each successfully trained model
+        for model_name, result in self.results.items():
+            if 'error' in result:
+                print(f"⊗ Skipping {model_name} (training failed)")
+                continue
+
+            print(f"\n{'='*70}")
+            print(f"Testing {model_name}")
+            print(f"{'='*70}")
+
+            try:
+                model_type = result['model_type']
+
+                if model_type == 'RetinaNet':
+                    # Test RetinaNet
+                    test_dataset = RetinaNetDataset(
+                        images_dir=str(test_images_path),
+                        annotations_file=str(test_annotations_path),
+                        filter_empty=True
+                    )
+                    trainer = RetinaNetTrainer(
+                        num_classes=self.num_classes + 1,
+                        backbone=result['backbone'],
+                        pretrained=False,
+                        device='auto'
+                    )
+                    model_dir = self.experiments_dir / f"retinanet_{result['backbone']}"
+
+                elif model_type == 'SSD':
+                    # Test SSD
+                    test_dataset = SSDDataset(
+                        images_dir=str(test_images_path),
+                        annotations_file=str(test_annotations_path),
+                        filter_empty=True
+                    )
+                    trainer = SSDTrainer(
+                        num_classes=self.num_classes + 1,
+                        backbone=result['backbone'],
+                        pretrained=False,
+                        device='auto'
+                    )
+                    model_dir = self.experiments_dir / f"ssd_{result['backbone']}"
+
+                elif model_type == 'Faster R-CNN':
+                    # Test Faster R-CNN
+                    test_dataset = FasterRCNNDataset(
+                        images_dir=str(test_images_path),
+                        annotations_file=str(test_annotations_path),
+                        filter_empty=True
+                    )
+                    trainer = FasterRCNNTrainer(
+                        num_classes=self.num_classes + 1,
+                        backbone=result['backbone'],
+                        pretrained=False,
+                        device='auto'
+                    )
+                    model_dir = self.experiments_dir / f"faster_rcnn_{result['backbone']}"
+
+                elif model_type == 'YOLO':
+                    # YOLO handles test differently
+                    print("Running YOLO test evaluation...")
+                    trainer = YOLOTrainer(
+                        model_size=result['size'],
+                        img_size=640,
+                        device='auto'
+                    )
+
+                    # Load best model
+                    model_dir = self.experiments_dir / f"yolo_{result['version'].lower()}_{result['size']}" / 'training' / 'weights'
+                    best_model_path = model_dir / 'best.pt'
+
+                    if best_model_path.exists():
+                        trainer.model = trainer.load_model(str(best_model_path))
+                        data_yaml = self.data_root / 'data.yaml'
+
+                        test_results_yolo = trainer.validate(
+                            data_yaml=str(data_yaml),
+                            split='test'
+                        )
+
+                        test_results[model_name] = {
+                            'mAP@0.5': float(test_results_yolo.box.map50),
+                            'mAP@0.5:0.95': float(test_results_yolo.box.map),
+                            'mAP@0.75': float(test_results_yolo.box.map75),
+                            'precision': float(test_results_yolo.box.mp),
+                            'recall': float(test_results_yolo.box.mr),
+                            'f1_score': 2 * (float(test_results_yolo.box.mp) * float(test_results_yolo.box.mr)) /
+                                      (float(test_results_yolo.box.mp) + float(test_results_yolo.box.mr) + 1e-10)
+                        }
+
+                        print(f"✓ {model_name} test evaluation completed!")
+                        continue
+                    else:
+                        print(f"⚠️  Model checkpoint not found: {best_model_path}")
+                        continue
+                else:
+                    print(f"Unknown model type: {model_type}")
+                    continue
+
+                # Load best model checkpoint for non-YOLO models
+                best_model_path = model_dir / 'best_model.pth'
+                if not best_model_path.exists():
+                    print(f"⚠️  Model checkpoint not found: {best_model_path}")
+                    continue
+
+                checkpoint = torch.load(best_model_path, map_location=trainer.device)
+                trainer.model.load_state_dict(checkpoint['model_state_dict'])
+
+                print(f"Loaded checkpoint from: {best_model_path}")
+                print(f"Test dataset size: {len(test_dataset)} images")
+
+                # Run validation on test set
+                test_loader = DataLoader(
+                    test_dataset,
+                    batch_size=result['batch_size'],
+                    shuffle=False,
+                    num_workers=2,
+                    collate_fn=lambda batch: tuple(zip(*batch))
+                )
+
+                metrics = validate_model(
+                    model=trainer.model,
+                    dataloader=test_loader,
+                    device=trainer.device,
+                    num_classes=self.num_classes + 1,
+                    conf_threshold=0.25,
+                    verbose=True
+                )
+
+                test_results[model_name] = {
+                    'mAP@0.5': metrics['mAP@0.5'],
+                    'mAP@0.5:0.95': metrics['mAP@0.5:0.95'],
+                    'mAP@0.75': metrics['mAP@0.75'],
+                    'precision': metrics['precision'],
+                    'recall': metrics['recall'],
+                    'f1_score': metrics['f1_score']
+                }
+
+                # Save test results to model directory
+                test_results_file = model_dir / 'test_results.json'
+                with open(test_results_file, 'w') as f:
+                    json.dump(metrics, f, indent=2)
+
+                print(f"✓ {model_name} test evaluation completed!")
+                print(f"   Test results saved to: {test_results_file}")
+
+            except Exception as e:
+                print(f"✗ {model_name} test evaluation failed: {str(e)}")
+                import traceback
+                traceback.print_exc()
+
+        # Save test results summary
+        if test_results:
+            test_summary_file = self.experiments_dir / 'test_results_summary.json'
+            with open(test_summary_file, 'w') as f:
+                json.dump(test_results, f, indent=2)
+
+            print(f"\n{'='*80}")
+            print("TEST SET RESULTS SUMMARY")
+            print(f"{'='*80}")
+            print(f"\n{'Model':<30} {'mAP@0.5':>10} {'mAP@0.75':>10} {'mAP@0.5:0.95':>14} {'Precision':>10} {'Recall':>10}")
+            print("-"*90)
+
+            for name, metrics in test_results.items():
+                print(f"{name:<30} {metrics['mAP@0.5']:>10.4f} {metrics['mAP@0.75']:>10.4f} "
+                      f"{metrics['mAP@0.5:0.95']:>14.4f} {metrics['precision']:>10.4f} {metrics['recall']:>10.4f}")
+
+            print(f"{'='*90}")
+            print(f"\n✓ Test results summary saved to: {test_summary_file}")
+
+            # Find best model on test set
+            best_model = max(test_results.items(), key=lambda x: x[1]['mAP@0.5:0.95'])
+            print(f"\n🏆 Best Model on Test Set: {best_model[0]}")
+            print(f"   mAP@0.5:     {best_model[1]['mAP@0.5']:.4f}")
+            print(f"   mAP@0.5:0.95: {best_model[1]['mAP@0.5:0.95']:.4f}")
+            print(f"   mAP@0.75:    {best_model[1]['mAP@0.75']:.4f}")
+
     def run_full_benchmark(self):
         """Run complete benchmark pipeline"""
         print(f"\n{'='*80}")
@@ -731,8 +931,11 @@ class ModelBenchmark:
         self.train_faster_rcnn_models()
         self.train_yolo_models()
 
-        # Save results
+        # Save training results
         self.save_results()
+
+        # Evaluate on test set
+        self.evaluate_on_test_set()
 
         # Create visualizations
         self.create_comparison_plots()
