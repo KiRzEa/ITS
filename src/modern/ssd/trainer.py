@@ -21,6 +21,9 @@ from typing import Dict, List, Tuple, Optional
 import json
 from tqdm import tqdm
 import cv2
+import sys
+sys.path.append(str(Path(__file__).parent.parent.parent))
+from utils.detection_validator import validate_model, save_metrics
 
 
 class TrafficSignDataset(Dataset):
@@ -456,6 +459,74 @@ class SSDTrainer:
             filtered_predictions.append(filtered_pred)
 
         return filtered_predictions
+
+    def validate(
+        self,
+        val_dataset: Dataset,
+        batch_size: int = 8,
+        conf_threshold: float = 0.001,
+        save_results: bool = True,
+        save_dir: str = None
+    ) -> Dict:
+        """
+        Validate model and compute detection metrics
+
+        Args:
+            val_dataset: Validation dataset
+            batch_size: Batch size for validation
+            conf_threshold: Confidence threshold for predictions
+            save_results: Save validation results to JSON
+            save_dir: Directory to save results (uses model save_dir if None)
+
+        Returns:
+            Dictionary with validation metrics:
+                - mAP@0.5:0.95: COCO-style mean Average Precision
+                - mAP@0.5: Average Precision at IoU=0.5
+                - mAP@0.75: Average Precision at IoU=0.75
+                - precision: Mean precision across classes
+                - recall: Mean recall across classes
+                - f1_score: F1 score
+                - per_class: Per-class metrics
+        """
+        print(f"\n{'='*60}")
+        print("Running Validation")
+        print(f"{'='*60}")
+        print(f"Dataset size: {len(val_dataset)}")
+        print(f"Batch size: {batch_size}")
+        print(f"Confidence threshold: {conf_threshold}")
+        print(f"{'='*60}\n")
+
+        # Create data loader
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=4,
+            collate_fn=self.collate_fn
+        )
+
+        # Run validation
+        metrics = validate_model(
+            model=self.model,
+            dataloader=val_loader,
+            device=self.device,
+            num_classes=self.num_classes,
+            conf_threshold=conf_threshold,
+            verbose=True
+        )
+
+        # Save results if requested
+        if save_results:
+            if save_dir is None:
+                save_dir = Path('experiments') / 'ssd' / 'validation'
+            else:
+                save_dir = Path(save_dir)
+
+            save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = save_dir / 'validation_metrics.json'
+            save_metrics(metrics, str(save_path))
+
+        return metrics
 
     def save_checkpoint(
         self,
