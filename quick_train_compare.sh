@@ -84,19 +84,48 @@ dataset = project.version(1).download('yolov8', location='data/raw')
 download_location = dataset.location
 print(f'Dataset downloaded to: {download_location}')
 
-# Check if we need to move/rename the directory
+# Handle Roboflow's flexible download structure
 downloaded_dir = Path(download_location).absolute()
 target_dir = Path('data/raw/yolov8').absolute()
 
-if downloaded_dir != target_dir:
+# Check if download location is directly data/raw (contents already there)
+# or if it's a subdirectory that needs moving
+if downloaded_dir == Path('data/raw').absolute():
+    # Roboflow downloaded directly into data/raw
+    # Check if we need to reorganize
+    if (downloaded_dir / 'train' / 'images').exists():
+        # Contents are directly in data/raw, need to move to data/raw/yolov8
+        print(f'Dataset contents found in {downloaded_dir}')
+        print(f'Reorganizing to {target_dir}...')
+
+        # Create temporary directory
+        import tempfile
+        temp_dir = Path(tempfile.mkdtemp(prefix='roboflow_'))
+
+        # Move contents to temp
+        import shutil
+        for item in downloaded_dir.iterdir():
+            if item.name != 'yolov8':  # Don't move target dir if it exists
+                shutil.move(str(item), str(temp_dir / item.name))
+
+        # Create target directory and move from temp
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for item in temp_dir.iterdir():
+            shutil.move(str(item), str(target_dir / item.name))
+
+        # Clean up temp
+        temp_dir.rmdir()
+        print(f'✓ Dataset reorganized to: {target_dir}')
+    else:
+        print(f'⚠️  Expected structure not found in {downloaded_dir}')
+elif downloaded_dir != target_dir:
+    # Downloaded to a subdirectory, can move directly
     if downloaded_dir.exists():
         print(f'Moving from {downloaded_dir} to {target_dir}')
         if target_dir.exists():
             import shutil
             shutil.rmtree(target_dir)
-        # Ensure parent directory exists
         target_dir.parent.mkdir(parents=True, exist_ok=True)
-        # Use shutil.move for cross-filesystem compatibility
         import shutil
         shutil.move(str(downloaded_dir), str(target_dir))
         print(f'✓ Dataset moved to: {target_dir}')
