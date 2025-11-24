@@ -84,18 +84,49 @@ dataset = project.version(1).download('yolov8', location='data/raw')
 download_location = dataset.location
 print(f'Dataset downloaded to: {download_location}')
 
-# Handle Roboflow's flexible download structure
+# Inspect what's actually in the download location
 downloaded_dir = Path(download_location).absolute()
+print(f'Inspecting download directory: {downloaded_dir}')
+print(f'  Exists: {downloaded_dir.exists()}')
+if downloaded_dir.exists():
+    contents = list(downloaded_dir.iterdir())
+    print(f'  Contents ({len(contents)} items):')
+    for item in sorted(contents)[:20]:
+        item_type = 'DIR' if item.is_dir() else 'FILE'
+        print(f'    [{item_type}] {item.name}')
+    if len(contents) > 20:
+        print(f'    ... and {len(contents) - 20} more items')
+
+# Handle Roboflow's flexible download structure
 target_dir = Path('data/raw/yolov8').absolute()
 
-# Check if download location is directly data/raw (contents already there)
-# or if it's a subdirectory that needs moving
-if downloaded_dir == Path('data/raw').absolute():
-    # Roboflow downloaded directly into data/raw
-    # Check if we need to reorganize
+# Look for the actual dataset directory (might have project name)
+data_raw = Path('data/raw').absolute()
+yolov8_dirs = []
+if data_raw.exists():
+    for item in data_raw.iterdir():
+        if item.is_dir() and (item / 'train' / 'images').exists():
+            yolov8_dirs.append(item)
+            print(f'Found valid dataset structure in: {item}')
+
+if yolov8_dirs:
+    # Found a directory with correct structure
+    source_dir = yolov8_dirs[0]  # Use the first one found
+    if source_dir != target_dir:
+        print(f'Moving dataset from {source_dir} to {target_dir}')
+        if target_dir.exists():
+            import shutil
+            shutil.rmtree(target_dir)
+        import shutil
+        shutil.move(str(source_dir), str(target_dir))
+        print(f'✓ Dataset moved to: {target_dir}')
+    else:
+        print(f'✓ Dataset is already at: {target_dir}')
+elif downloaded_dir == data_raw:
+    # Downloaded directly into data/raw but structure might be different
+    # Check if subdirectories exist directly
     if (downloaded_dir / 'train' / 'images').exists():
-        # Contents are directly in data/raw, need to move to data/raw/yolov8
-        print(f'Dataset contents found in {downloaded_dir}')
+        print(f'Dataset structure found directly in {downloaded_dir}')
         print(f'Reorganizing to {target_dir}...')
 
         # Create temporary directory
@@ -105,34 +136,25 @@ if downloaded_dir == Path('data/raw').absolute():
         # Move contents to temp
         import shutil
         for item in downloaded_dir.iterdir():
-            if item.name != 'yolov8':  # Don't move target dir if it exists
+            if item.name != 'yolov8':
                 shutil.move(str(item), str(temp_dir / item.name))
 
-        # Create target directory and move from temp
+        # Create target and move from temp
         target_dir.mkdir(parents=True, exist_ok=True)
         for item in temp_dir.iterdir():
             shutil.move(str(item), str(target_dir / item.name))
 
-        # Clean up temp
         temp_dir.rmdir()
         print(f'✓ Dataset reorganized to: {target_dir}')
     else:
-        print(f'⚠️  Expected structure not found in {downloaded_dir}')
-elif downloaded_dir != target_dir:
-    # Downloaded to a subdirectory, can move directly
-    if downloaded_dir.exists():
-        print(f'Moving from {downloaded_dir} to {target_dir}')
-        if target_dir.exists():
-            import shutil
-            shutil.rmtree(target_dir)
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        import shutil
-        shutil.move(str(downloaded_dir), str(target_dir))
-        print(f'✓ Dataset moved to: {target_dir}')
-    else:
-        print(f'⚠️  Download location does not exist: {downloaded_dir}')
+        print(f'❌ ERROR: Could not find train/images directory')
+        print(f'   Please check the download and directory structure')
+        sys.exit(1)
 else:
-    print(f'✓ Dataset is already at correct location: {target_dir}')
+    print(f'❌ ERROR: Unexpected download structure')
+    print(f'   Downloaded to: {downloaded_dir}')
+    print(f'   Expected: subdirectory in data/raw or direct download to data/raw')
+    sys.exit(1)
 
 # Verify the download
 train_images = target_dir / 'train' / 'images'
