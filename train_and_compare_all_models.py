@@ -13,7 +13,6 @@ All models trained for 20 epochs on the same dataset
 
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent / 'src'))
 
 import torch
 import json
