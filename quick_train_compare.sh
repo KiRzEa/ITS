@@ -44,6 +44,14 @@ import os
 import sys
 from pathlib import Path
 
+# Ensure we're in the correct directory
+print(f'Current working directory: {os.getcwd()}')
+
+# Create data/raw directory if it doesn't exist
+data_raw = Path('data/raw')
+data_raw.mkdir(parents=True, exist_ok=True)
+print(f'Created/verified directory: {data_raw.absolute()}')
+
 # Load environment variables manually
 env_file = Path('.env')
 if env_file.exists():
@@ -67,9 +75,41 @@ print('Connecting to Roboflow...')
 rf = Roboflow(api_key=api_key)
 project = rf.workspace('giaothong-t5tdy').project('phat_hien_bien_bao-zsswb')
 print('Downloading dataset...')
+
+# Roboflow downloads to: location/project-name-version
+# So if location='data/raw', it creates: data/raw/phat_hien_bien_bao-zsswb-1/
 dataset = project.version(1).download('yolov8', location='data/raw')
 
-print(f'✓ Dataset downloaded to: data/raw/yolov8')
+# Get actual download location
+download_location = dataset.location
+print(f'Dataset downloaded to: {download_location}')
+
+# Check if we need to move/rename the directory
+downloaded_dir = Path(download_location)
+target_dir = Path('data/raw/yolov8')
+
+if downloaded_dir != target_dir and downloaded_dir.exists():
+    print(f'Moving from {downloaded_dir} to {target_dir}')
+    if target_dir.exists():
+        import shutil
+        shutil.rmtree(target_dir)
+    downloaded_dir.rename(target_dir)
+    print(f'✓ Dataset moved to: {target_dir}')
+else:
+    print(f'✓ Dataset is at: {target_dir}')
+
+# Verify the download
+train_images = target_dir / 'train' / 'images'
+if train_images.exists():
+    num_images = len(list(train_images.glob('*.*')))
+    print(f'✓ Verified: Found {num_images} training images')
+else:
+    print(f'⚠️  Warning: Training images not found at {train_images}')
+    print(f'   Directory contents:')
+    if target_dir.exists():
+        for item in target_dir.iterdir():
+            print(f'     - {item.name}')
+
 ENDPYTHON
 
     if [ $? -ne 0 ]; then

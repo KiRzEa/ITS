@@ -146,17 +146,61 @@ def main():
     data_root = Path(args.data_root)
     output_dir = Path(args.output_dir)
 
-    # Read data.yaml to get class names
+    # Read data.yaml to get class names, or auto-detect from directories
     data_yaml = data_root / 'data.yaml'
+
     if not data_yaml.exists():
-        print(f"Error: data.yaml not found at {data_yaml}")
-        return
+        print(f"⚠️  data.yaml not found at {data_yaml}")
+        print(f"   Auto-detecting class names from label files...")
 
-    with open(data_yaml, 'r') as f:
-        data_config = yaml.safe_load(f)
+        # Auto-detect class names from train labels
+        train_labels_dir = data_root / 'train' / 'labels'
+        if not train_labels_dir.exists():
+            print(f"Error: Training labels directory not found at {train_labels_dir}")
+            return
 
-    class_names = data_config['names']
-    print(f"Found {len(class_names)} classes: {class_names}")
+        # Get unique class IDs
+        class_ids = set()
+        for label_file in train_labels_dir.glob('*.txt'):
+            with open(label_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if parts:
+                        class_ids.add(int(parts[0]))
+
+        num_classes = max(class_ids) + 1 if class_ids else 0
+        class_names = [f'class_{i}' for i in range(num_classes)]
+
+        # Try to load class names from dataset_info.json if available
+        dataset_info_file = data_root.parent / 'dataset_info_yolov8.json'
+        if dataset_info_file.exists():
+            print(f"   Found dataset_info.json, loading class names...")
+            with open(dataset_info_file, 'r') as f:
+                dataset_info = json.load(f)
+                if 'class_names' in dataset_info:
+                    class_names = dataset_info['class_names']
+
+        print(f"   Detected {len(class_names)} classes: {class_names}")
+
+        # Create data.yaml
+        data_config = {
+            'path': str(data_root.absolute()),
+            'train': 'train/images',
+            'val': 'valid/images',
+            'test': 'test/images',
+            'names': class_names,
+            'nc': len(class_names)
+        }
+
+        print(f"   Creating {data_yaml}...")
+        with open(data_yaml, 'w') as f:
+            yaml.dump(data_config, f, default_flow_style=False)
+        print(f"   ✓ Created data.yaml")
+    else:
+        with open(data_yaml, 'r') as f:
+            data_config = yaml.safe_load(f)
+        class_names = data_config['names']
+        print(f"Found {len(class_names)} classes: {class_names}")
 
     # Convert train set
     print(f"\n{'='*60}")
