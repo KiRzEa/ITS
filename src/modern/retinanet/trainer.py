@@ -249,16 +249,36 @@ class RetinaNetTrainer:
         # Get number of anchors
         num_anchors = self.model.head.classification_head.num_anchors
 
-        # Get in_channels from the first layer of conv
-        # Handle both sequential and Conv2dNormActivation cases
-        first_conv = self.model.head.classification_head.conv
-        if hasattr(first_conv, '__getitem__'):
-            in_channels = first_conv[0].in_channels
-        elif hasattr(first_conv, '0'):
-            in_channels = getattr(first_conv, '0').in_channels
+        # Get in_channels - need to inspect the conv layers more carefully
+        # The classification head has a conv attribute that could be:
+        # 1. A Sequential with Conv2d layers
+        # 2. A Conv2dNormActivation module
+        # 3. Direct access to in_channels
+
+        in_channels = None
+        conv_module = self.model.head.classification_head.conv
+
+        # Try different ways to get in_channels
+        if hasattr(conv_module, 'in_channels'):
+            in_channels = conv_module.in_channels
+        elif hasattr(conv_module, '__getitem__'):
+            # It's a Sequential or ModuleList
+            first_layer = conv_module[0]
+            if hasattr(first_layer, 'in_channels'):
+                in_channels = first_layer.in_channels
+            else:
+                # First layer might be Conv2dNormActivation, get its first child
+                in_channels = list(first_layer.children())[0].in_channels
         else:
-            # For Conv2dNormActivation, access the first conv layer
-            in_channels = list(first_conv.children())[0].in_channels
+            # Try to get from children
+            children_list = list(conv_module.children())
+            if children_list:
+                first_child = children_list[0]
+                if hasattr(first_child, 'in_channels'):
+                    in_channels = first_child.in_channels
+
+        if in_channels is None:
+            raise ValueError("Could not determine in_channels for RetinaNet head")
 
         # Create new classification head
         self.model.head.classification_head = RetinaNetClassificationHead(

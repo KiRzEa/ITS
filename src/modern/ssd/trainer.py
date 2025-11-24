@@ -220,15 +220,24 @@ class SSDTrainer:
         # Get number of anchors from the model
         num_anchors = self.model.anchor_generator.num_anchors_per_location()
 
-        # Get input channels for each feature map from the backbone's feature extractor
-        if hasattr(self.model.backbone, 'out_channels'):
-            in_channels = self.model.backbone.out_channels
-        elif hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'features'):
-            # For feature extractors, get out_channels from the feature layers
-            in_channels = self.model.head.classification_head.module_list[0].in_channels
-        else:
-            # Fallback: inspect the existing head
-            raise AttributeError("Cannot determine in_channels for SSD head replacement")
+        # Get input channels for each feature map from the existing head
+        # SSD head expects a list of in_channels, one for each feature map level
+        in_channels = []
+
+        # Extract in_channels from existing classification head layers
+        if hasattr(self.model.head.classification_head, 'module_list'):
+            # Get in_channels from each module in the classification head
+            for module in self.model.head.classification_head.module_list:
+                if hasattr(module, 'in_channels'):
+                    in_channels.append(module.in_channels)
+                elif isinstance(module, torch.nn.Sequential) or isinstance(module, torch.nn.ModuleList):
+                    # Get from first layer in sequential
+                    first_layer = list(module.children())[0]
+                    if hasattr(first_layer, 'in_channels'):
+                        in_channels.append(first_layer.in_channels)
+
+        if not in_channels:
+            raise AttributeError("Cannot determine in_channels list for SSD head replacement")
 
         # Create new classification head
         self.model.head.classification_head = SSDClassificationHead(
