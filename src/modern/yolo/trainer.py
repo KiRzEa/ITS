@@ -16,7 +16,8 @@ class YOLOTrainer:
 
     def __init__(
         self,
-        model_size: str = 'n',  # n, s, m, l, x
+        model_version: str = 'v11',
+        model_size: str = 'n',
         img_size: int = 640,
         device: str = 'auto'
     ):
@@ -24,10 +25,17 @@ class YOLOTrainer:
         Initialize YOLO trainer
 
         Args:
-            model_size: Model size (n=nano, s=small, m=medium, l=large, x=xlarge)
-            img_size: Input image size
+            model_version: YOLO version ('v5', 'v8', 'v11'). Default: 'v11'
+            model_size: Model size. Options:
+                - 'n': Nano (~1-3M params, fastest, least accurate)
+                - 's': Small (~7-11M params, fast, good balance)
+                - 'm': Medium (~20-25M params, moderate speed, better accuracy)
+                - 'l': Large (~40-50M params, slower, high accuracy)
+                - 'x': XLarge (~60-80M params, slowest, highest accuracy)
+            img_size: Input image size (640, 1280, etc.)
             device: Device to use ('auto', 'cpu', 'cuda')
         """
+        self.model_version = model_version
         self.model_size = model_size
         self.img_size = img_size
 
@@ -38,11 +46,51 @@ class YOLOTrainer:
             self.device = device
 
         # Initialize model
-        model_name = f'yolo11{model_size}.pt'
+        model_name = self._get_model_name(model_version, model_size)
         self.model = YOLO(model_name)
 
-        print(f"Initialized YOLOv11{model_size.upper()} on {self.device}")
+        # Get approximate parameter count
+        param_info = self._get_model_info()
+
+        print(f"Initialized {model_name.replace('.pt', '').upper()} on {self.device}")
         print(f"Image size: {img_size}")
+        print(f"Model info: {param_info}")
+
+    def _get_model_name(self, version: str, size: str) -> str:
+        """
+        Get YOLO model filename
+
+        Args:
+            version: YOLO version
+            size: Model size
+
+        Returns:
+            Model filename
+        """
+        version_map = {
+            'v5': f'yolov5{size}u.pt',  # YOLOv5 updated version
+            'v8': f'yolov8{size}.pt',
+            'v11': f'yolo11{size}.pt',
+        }
+
+        if version not in version_map:
+            raise ValueError(
+                f"Unknown YOLO version: {version}. "
+                f"Supported: {list(version_map.keys())}"
+            )
+
+        return version_map[version]
+
+    def _get_model_info(self) -> str:
+        """Get model size information"""
+        size_info = {
+            'n': 'Nano (1-3M params)',
+            's': 'Small (7-11M params)',
+            'm': 'Medium (20-25M params)',
+            'l': 'Large (40-50M params)',
+            'x': 'XLarge (60-80M params)'
+        }
+        return size_info.get(self.model_size, 'Unknown')
 
     def train(
         self,
@@ -74,7 +122,7 @@ class YOLOTrainer:
         print(f"\n{'='*50}")
         print("Starting YOLO Training")
         print(f"{'='*50}")
-        print(f"Model: YOLOv11{self.model_size.upper()}")
+        print(f"Model: YOLO{self.model_version.upper()}-{self.model_size.upper()}")
         print(f"Epochs: {epochs}")
         print(f"Batch size: {batch_size}")
         print(f"Device: {self.device}")
@@ -368,16 +416,42 @@ def create_data_yaml(
 
 if __name__ == "__main__":
     # Example usage
-    print("YOLOv11 Trainer Example")
+    print("YOLO Trainer Example\n")
+    print("="*60)
+    print("Available Models:")
+    print("="*60)
+    print("YOLOv5:  yolov5n, yolov5s, yolov5m, yolov5l, yolov5x")
+    print("YOLOv8:  yolov8n, yolov8s, yolov8m, yolov8l, yolov8x")
+    print("YOLOv11: yolo11n, yolo11s, yolo11m, yolo11l, yolo11x")
+    print("="*60)
+    print("\nModel Size Guide:")
+    print("  n (nano):   ~1-3M params   - Fastest, least accurate")
+    print("  s (small):  ~7-11M params  - Fast, good balance")
+    print("  m (medium): ~20-25M params - Moderate speed")
+    print("  l (large):  ~40-50M params - Slower, high accuracy")
+    print("  x (xlarge): ~60-80M params - Slowest, highest accuracy")
+    print("="*60)
 
-    # Create trainer
-    trainer = YOLOTrainer(model_size='n', img_size=640)
+    # Example: Create lightweight trainer for limited resources
+    print("\n[Example 1] Lightweight model (recommended for limited resources):")
+    trainer_nano = YOLOTrainer(model_version='v11', model_size='n', img_size=640)
+
+    print("\n[Example 2] Balanced model:")
+    trainer_small = YOLOTrainer(model_version='v8', model_size='s', img_size=640)
+
+    print("\n[Example 3] Using YOLOv5 (most lightweight):")
+    trainer_v5 = YOLOTrainer(model_version='v5', model_size='n', img_size=640)
 
     # Print model info
-    print("\nModel Information:")
-    trainer.get_model_info()
+    print("\n" + "="*60)
+    print("Model Information:")
+    print("="*60)
+    trainer_nano.get_model_info()
 
-    print("\nTrainer initialized successfully!")
-    print("To train: trainer.train(data_yaml='path/to/data.yaml', epochs=100)")
-    print("To validate: trainer.validate()")
-    print("To predict: trainer.predict(source='path/to/image.jpg')")
+    print("\n" + "="*60)
+    print("Usage Examples:")
+    print("="*60)
+    print("trainer.train(data_yaml='path/to/data.yaml', epochs=100)")
+    print("trainer.validate()")
+    print("trainer.predict(source='path/to/image.jpg')")
+    print("="*60)

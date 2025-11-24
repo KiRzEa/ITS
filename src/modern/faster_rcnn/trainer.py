@@ -5,8 +5,16 @@ Two-stage object detection using PyTorch and torchvision
 
 import torch
 import torchvision
-from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2, FasterRCNN_ResNet50_FPN_V2_Weights
+from torchvision.models.detection import (
+    fasterrcnn_resnet50_fpn_v2,
+    FasterRCNN_ResNet50_FPN_V2_Weights,
+    fasterrcnn_mobilenet_v3_large_fpn,
+    FasterRCNN_MobileNet_V3_Large_FPN_Weights,
+    fasterrcnn_mobilenet_v3_large_320_fpn,
+    FasterRCNN_MobileNet_V3_Large_320_FPN_Weights
+)
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+from torchvision.models.detection.backbone_utils import resnet_fpn_backbone
 from torch.utils.data import DataLoader, Dataset
 import torch.optim as optim
 from pathlib import Path
@@ -150,11 +158,17 @@ class FasterRCNNTrainer:
 
         Args:
             num_classes: Number of classes (including background)
-            backbone: Backbone architecture
+            backbone: Backbone architecture. Options:
+                - 'resnet50': ResNet50 FPN (default, ~160M params)
+                - 'resnet18': ResNet18 FPN (lightweight, ~21M params)
+                - 'resnet34': ResNet34 FPN (lightweight, ~33M params)
+                - 'mobilenet_v3_large': MobileNetV3 Large FPN (lightweight, ~19M params)
+                - 'mobilenet_v3_large_320': MobileNetV3 Large 320 FPN (faster inference, ~19M params)
             pretrained: Use pretrained weights
             device: Device to use
         """
         self.num_classes = num_classes
+        self.backbone = backbone
 
         # Determine device
         if device == 'auto':
@@ -162,12 +176,8 @@ class FasterRCNNTrainer:
         else:
             self.device = torch.device(device)
 
-        # Load model
-        if pretrained:
-            weights = FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT
-            self.model = fasterrcnn_resnet50_fpn_v2(weights=weights)
-        else:
-            self.model = fasterrcnn_resnet50_fpn_v2(weights=None)
+        # Load model based on backbone choice
+        self.model = self._create_model(backbone, pretrained)
 
         # Replace box predictor
         in_features = self.model.roi_heads.box_predictor.cls_score.in_features
@@ -178,6 +188,58 @@ class FasterRCNNTrainer:
         print(f"Initialized Faster R-CNN with {backbone} backbone")
         print(f"Number of classes: {num_classes}")
         print(f"Device: {self.device}")
+
+    def _create_model(self, backbone: str, pretrained: bool):
+        """
+        Create Faster R-CNN model with specified backbone
+
+        Args:
+            backbone: Backbone name
+            pretrained: Use pretrained weights
+
+        Returns:
+            Faster R-CNN model
+        """
+        if backbone == 'resnet50':
+            if pretrained:
+                weights = FasterRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+                model = fasterrcnn_resnet50_fpn_v2(weights=weights)
+            else:
+                model = fasterrcnn_resnet50_fpn_v2(weights=None)
+
+        elif backbone == 'resnet18':
+            # Create ResNet18 FPN backbone
+            backbone_model = resnet_fpn_backbone('resnet18', pretrained=pretrained)
+            from torchvision.models.detection import FasterRCNN
+            model = FasterRCNN(backbone_model, num_classes=91)  # Will replace predictor later
+
+        elif backbone == 'resnet34':
+            # Create ResNet34 FPN backbone
+            backbone_model = resnet_fpn_backbone('resnet34', pretrained=pretrained)
+            from torchvision.models.detection import FasterRCNN
+            model = FasterRCNN(backbone_model, num_classes=91)
+
+        elif backbone == 'mobilenet_v3_large':
+            if pretrained:
+                weights = FasterRCNN_MobileNet_V3_Large_FPN_Weights.DEFAULT
+                model = fasterrcnn_mobilenet_v3_large_fpn(weights=weights)
+            else:
+                model = fasterrcnn_mobilenet_v3_large_fpn(weights=None)
+
+        elif backbone == 'mobilenet_v3_large_320':
+            if pretrained:
+                weights = FasterRCNN_MobileNet_V3_Large_320_FPN_Weights.DEFAULT
+                model = fasterrcnn_mobilenet_v3_large_320_fpn(weights=weights)
+            else:
+                model = fasterrcnn_mobilenet_v3_large_320_fpn(weights=None)
+
+        else:
+            raise ValueError(
+                f"Unknown backbone: {backbone}. "
+                f"Supported: resnet50, resnet18, resnet34, mobilenet_v3_large, mobilenet_v3_large_320"
+            )
+
+        return model
 
     def train(
         self,
@@ -437,11 +499,49 @@ class FasterRCNNTrainer:
 
 if __name__ == "__main__":
     # Example usage
-    print("Faster R-CNN Trainer Example")
+    print("Faster R-CNN Trainer Example\n")
+    print("="*60)
+    print("Available Backbones:")
+    print("="*60)
+    print("  resnet50              - ~160M params (default, high accuracy)")
+    print("  resnet34              - ~33M params (lightweight)")
+    print("  resnet18              - ~21M params (lightweight)")
+    print("  mobilenet_v3_large    - ~19M params (lightweight, fast)")
+    print("  mobilenet_v3_large_320 - ~19M params (fastest inference)")
+    print("="*60)
 
-    # Create trainer (3 classes + background = 4)
-    trainer = FasterRCNNTrainer(num_classes=4, pretrained=True)
+    print("\n[Example 1] Default ResNet50 (high accuracy):")
+    trainer_resnet50 = FasterRCNNTrainer(
+        num_classes=4,
+        backbone='resnet50',
+        pretrained=True
+    )
 
-    print("\nTrainer initialized successfully!")
-    print("To train: trainer.train(train_dataset, val_dataset, epochs=50)")
-    print("To predict: trainer.predict(images)")
+    print("\n[Example 2] Lightweight MobileNetV3 (resource-constrained):")
+    trainer_mobilenet = FasterRCNNTrainer(
+        num_classes=4,
+        backbone='mobilenet_v3_large',
+        pretrained=True
+    )
+
+    print("\n[Example 3] Fast inference with MobileNetV3 320:")
+    trainer_mobilenet_320 = FasterRCNNTrainer(
+        num_classes=4,
+        backbone='mobilenet_v3_large_320',
+        pretrained=True
+    )
+
+    print("\n[Example 4] Balanced with ResNet34:")
+    trainer_resnet34 = FasterRCNNTrainer(
+        num_classes=4,
+        backbone='resnet34',
+        pretrained=True
+    )
+
+    print("\n" + "="*60)
+    print("Usage Examples:")
+    print("="*60)
+    print("trainer.train(train_dataset, val_dataset, epochs=50)")
+    print("trainer.predict(images, confidence_threshold=0.5)")
+    print("trainer.save_checkpoint(path, epoch, optimizer, history)")
+    print("="*60)
