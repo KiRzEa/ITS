@@ -235,6 +235,25 @@ class SSDTrainer:
                     first_layer = list(module.children())[0]
                     if hasattr(first_layer, 'in_channels'):
                         in_channels.append(first_layer.in_channels)
+                    elif hasattr(first_layer, '__iter__'):
+                        # May be Conv2dNormActivation or similar nested structure
+                        for sublayer in first_layer:
+                            if hasattr(sublayer, 'in_channels'):
+                                in_channels.append(sublayer.in_channels)
+                                break
+
+        # Fallback: Try to extract from module children directly
+        if not in_channels:
+            # Try iterating through module_list as an iterable
+            try:
+                for module in self.model.head.classification_head.module_list:
+                    # Try to get the first Conv2d layer from nested structures
+                    for layer in module.modules():
+                        if isinstance(layer, torch.nn.Conv2d):
+                            in_channels.append(layer.in_channels)
+                            break
+            except:
+                pass
 
         if not in_channels:
             raise AttributeError("Cannot determine in_channels list for SSD head replacement")
