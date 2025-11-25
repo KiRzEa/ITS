@@ -12,7 +12,7 @@ echo "=================================="
 echo ""
 
 # Configuration
-EPOCHS=${1:-20}
+EPOCHS=10
 DATA_ROOT="data/raw/yolov8"
 COCO_DIR="data/processed/coco_format"
 EXPERIMENTS_DIR="experiments/model_comparison"

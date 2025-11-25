@@ -376,9 +376,12 @@ def validate_model(
                 pred_labels.append(labels_np)
                 pred_scores.append(scores_np)
 
-                # Ground truth - already 0-indexed (no background class)
+                # Ground truth - remap labels to 0-indexed (COCO format uses 1-indexed categories)
                 gt_boxes.append(target['boxes'].cpu().numpy())
-                gt_labels.append(target['labels'].cpu().numpy())
+                gt_labels_np = target['labels'].cpu().numpy()
+                # Remap labels: 1->0, 2->1, 3->2, etc. (subtract 1)
+                gt_labels_np = gt_labels_np - 1
+                gt_labels.append(gt_labels_np)
 
             # Add to validator
             validator.add_batch(pred_boxes, pred_labels, pred_scores, gt_boxes, gt_labels)

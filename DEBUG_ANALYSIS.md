@@ -5,7 +5,7 @@ Analyzed the `all_results.json` file and identified multiple training failures a
 
 ---
 
-## Issue 1: Error "5" - RetinaNet and Faster R-CNN Models
+## Issue 1: Error "5" - RetinaNet and Faster R-CNN Models ✅ FIXED
 
 ### Affected Models:
 - RetinaNet-resnet50
@@ -16,23 +16,36 @@ Analyzed the `all_results.json` file and identified multiple training failures a
 - FasterRCNN-mobilenet_v3_large
 
 ### Root Cause:
-The error "5" is likely coming from PyTorch's torchvision detection models when they encounter label values that equal or exceed `num_classes`.
+**KeyError: 5** in the validation code when processing ground truth labels.
 
 **The Problem:**
-- Dataset has 5 classes with category_ids: 1, 2, 3, 4, 5 (from COCO format)
-- Training script passes `num_classes = 6` (5 classes + 1 background)
-- But torchvision models expect labels in range [0, num_classes) which is [0, 6)
-- Category ID 5 is valid (5 < 6), but the actual error might be an assertion failure
+1. COCO format annotations use 1-indexed category IDs: 1, 2, 3, 4, 5
+2. The validator creates dictionaries with keys `range(num_classes-1)` = [0, 1, 2, 3, 4]
+3. Predictions are correctly remapped: 1->0, 2->1, etc. (line 373 in detection_validator.py)
+4. **BUT** ground truth labels were NOT remapped and stayed as 1, 2, 3, 4, 5
+5. When trying to access `all_gt_boxes[5]`, it causes KeyError because key 5 doesn't exist
 
-**Most Likely Cause:**
-The COCO format annotations might not exist yet or have issues. Check if these files exist:
-- `data/processed/coco_format/train_coco.json`
-- `data/processed/coco_format/valid_coco.json`
+### Solution: ✅ FIXED
+File: `src/utils/detection_validator.py`, lines 379-384
 
-### Solution:
-1. Ensure COCO format annotations are created properly
-2. Verify category IDs in COCO annotations are in range [1, 5] (background is 0, automatically handled)
-3. Run the dataset conversion script to generate proper COCO annotations
+Changed from:
+```python
+# Ground truth - already 0-indexed (no background class)
+gt_boxes.append(target['boxes'].cpu().numpy())
+gt_labels.append(target['labels'].cpu().numpy())
+```
+
+To:
+```python
+# Ground truth - remap labels to 0-indexed (COCO format uses 1-indexed categories)
+gt_boxes.append(target['boxes'].cpu().numpy())
+gt_labels_np = target['labels'].cpu().numpy()
+# Remap labels: 1->0, 2->1, 3->2, etc. (subtract 1)
+gt_labels_np = gt_labels_np - 1
+gt_labels.append(gt_labels_np)
+```
+
+Now ground truth labels are properly remapped to match the validator's expected range [0, 4].
 
 ---
 
@@ -121,34 +134,24 @@ The script has an `evaluate_on_test_set()` method (lines 722-919) that should ev
 
 ## Summary of Fixes Applied
 
+✅ **Fixed**: Error "5" - Ground truth label remapping in validator
 ✅ **Fixed**: RetinaNet-mobilenet_v3 anchor configuration
 ✅ **Fixed**: SSD-mobilenet_v3 in_channels detection
-⚠️ **Requires Data**: Error "5" models need COCO format annotations to be created
 ℹ️ **Clarified**: YOLO metrics are from validation set, not test set
 
 ---
 
 ## Next Steps
 
-1. **Create COCO Format Annotations**
-   ```bash
-   # Run your COCO conversion script
-   python scripts/convert_to_coco.py  # or similar
-   ```
+**Re-run Training** (all fixes have been applied to the code):
+```bash
+python train_and_compare_all_models.py --epochs 20
+```
 
-2. **Verify Annotations**
-   Check that these files exist and are valid:
-   - `data/processed/coco_format/train_coco.json`
-   - `data/processed/coco_format/valid_coco.json`
-   - `data/processed/coco_format/test_coco.json`
-
-3. **Re-run Training**
-   ```bash
-   python train_and_compare_all_models.py --epochs 20
-   ```
-
-4. **Evaluate on Test Set**
-   Make sure the script completes the test set evaluation at the end
+**Note**: The COCO format annotations will be created automatically on Kaggle when you run the training script, or you can create them manually using:
+```bash
+python scripts/prepare_coco_format.py
+```
 
 ---
 
